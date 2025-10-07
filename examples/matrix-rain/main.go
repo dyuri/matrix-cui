@@ -63,7 +63,18 @@ func main() {
 
 	// Animation loop
 	frame := 0
+	lastFrameTime := time.Now()
+	fps := 0.0
+
 	for {
+		// Calculate FPS
+		now := time.Now()
+		frameDuration := now.Sub(lastFrameTime).Seconds()
+		if frameDuration > 0 {
+			fps = 1.0 / frameDuration
+		}
+		lastFrameTime = now
+
 		// Clear matrix with black background
 		m.Fill(matrix.NewCell(' ', lipgloss.Color(""), lipgloss.Color("#000000")))
 
@@ -110,12 +121,20 @@ func main() {
 			}
 		}
 
+		// Draw FPS counter in top-right corner
+		fpsText := fmt.Sprintf("FPS: %.0f", fps)
+		fpsCell := matrix.NewCell(' ', lipgloss.Color("#FFFFFF"), lipgloss.Color("#000000"))
+		fpsX := width - len(fpsText)
+		if fpsX > 0 {
+			m.PutString(fpsX, 0, fpsText, fpsCell)
+		}
+
 		// Render and display
 		fmt.Print("\033[H") // Move cursor to home position
 		fmt.Print(m.Render())
 
 		// Sleep for animation timing
-		time.Sleep(50 * time.Millisecond)
+		// time.Sleep(20 * time.Millisecond)
 		frame++
 	}
 }
