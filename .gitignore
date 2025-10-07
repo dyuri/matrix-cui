@@ -31,5 +31,7 @@ vendor/
 .DS_Store
 
 # Example binaries
-examples/demo
-examples/demo.exe
+examples/simple-demo/demo
+examples/simple-demo/demo.exe
+examples/matrix-rain/matrix-rain
+examples/matrix-rain/matrix-rain.exe
