@@ -3,8 +3,6 @@ package matrixcui
 import (
 	"fmt"
 	"os"
-
-	"github.com/charmbracelet/x/term"
 )
 
 // Matrix represents an NxM character matrix for rendering.
@@ -40,10 +38,12 @@ func NewMatrix(width, height int) *Matrix {
 // NewMatrixAuto creates a matrix that fills the current terminal size.
 // Falls back to 80x24 if terminal size cannot be detected.
 func NewMatrixAuto() *Matrix {
-	width, height, err := term.GetSize(os.Stdout.Fd())
+	// Use GetTerminalSize which is the same function used elsewhere
+	width, height, err := GetTerminalSize()
 	if err != nil {
 		// Fallback to common default
 		width, height = 80, 24
+		fmt.Fprintf(os.Stderr, "Warning: Could not detect terminal size (%v), using default 80x24\n", err)
 	}
 	return NewMatrix(width, height)
 }

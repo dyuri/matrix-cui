@@ -20,8 +20,9 @@ func (m *Matrix) Render() string {
 			sb.WriteString(renderCell(cell))
 		}
 		// Add newline except for the last row
+		// Use \r\n for raw mode terminals (carriage return + line feed)
 		if y < m.height-1 {
-			sb.WriteString("\n")
+			sb.WriteString("\r\n")
 		}
 	}
 
@@ -88,7 +89,7 @@ func (m *Matrix) RenderRegion(x, y, width, height int) string {
 			sb.WriteString(renderCell(cell))
 		}
 		if row < height-1 {
-			sb.WriteString("\n")
+			sb.WriteString("\r\n")
 		}
 	}
 
@@ -118,7 +119,7 @@ func (m *Matrix) RenderCol(x int) string {
 		cell := m.cells[y][x]
 		sb.WriteString(renderCell(cell))
 		if y < m.height-1 {
-			sb.WriteString("\n")
+			sb.WriteString("\r\n")
 		}
 	}
 

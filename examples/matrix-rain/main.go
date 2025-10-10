@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -19,10 +20,31 @@ type Column struct {
 }
 
 func main() {
+	// Setup terminal for fullscreen TUI
+	term, err := matrix.NewTerminal()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create terminal: %v\n", err)
+		os.Exit(1)
+	}
+	defer term.Close()
+
+	if err := term.SetupFullscreen(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to setup fullscreen: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Setup cleanup on interrupt signals (Ctrl+C)
+	term.SetupCleanupOnSignal()
+
 	// Create matrix filling the terminal
 	m := matrix.NewMatrixAuto()
 
 	width, height := m.Width(), m.Height()
+
+	// Start event reader
+	reader := matrix.NewEventReader()
+	eventChan, cleanup := matrix.StartEventChannel(reader)
+	defer cleanup()
 
 	// Character set for the rain
 	chars := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%^&*()_+-=[]{}|;:,.<>?/~`")
@@ -57,16 +79,105 @@ func main() {
 		lipgloss.Color("#002200"), // Almost black
 	}
 
-	// Clear screen and hide cursor
-	fmt.Print("\033[2J\033[?25l")
-	defer fmt.Print("\033[?25h") // Show cursor on exit
-
-	// Animation loop
+	// Animation loop state
 	frame := 0
 	lastFrameTime := time.Now()
 	fps := 0.0
+	animationSpeed := 50 * time.Millisecond // Base animation speed
+	paused := false
+
+	// Animation ticker
+	ticker := time.NewTicker(animationSpeed)
+	defer ticker.Stop()
 
 	for {
+		select {
+		case event := <-eventChan:
+			// Handle keyboard events
+			if keyEvent, ok := event.(matrix.KeyEvent); ok {
+				switch keyEvent.Key {
+				case matrix.KeyEscape:
+					// ESC to quit
+					return
+				case matrix.KeyUp, matrix.KeyRight:
+					// Speed up (decrease delay)
+					animationSpeed -= 10 * time.Millisecond
+					if animationSpeed < 10*time.Millisecond {
+						animationSpeed = 10 * time.Millisecond
+					}
+					ticker.Reset(animationSpeed)
+				case matrix.KeyDown, matrix.KeyLeft:
+					// Slow down (increase delay)
+					animationSpeed += 10 * time.Millisecond
+					if animationSpeed > 200*time.Millisecond {
+						animationSpeed = 200 * time.Millisecond
+					}
+					ticker.Reset(animationSpeed)
+				case matrix.KeySpace:
+					// Toggle pause
+					paused = !paused
+				}
+
+				// Handle character keys
+				if keyEvent.Key == matrix.KeyNone {
+					switch keyEvent.Rune {
+					case 'p', 'P', ' ':
+						// Toggle pause
+						paused = !paused
+					case 'q', 'Q':
+						return
+					case '+', '=':
+						// Speed up
+						animationSpeed -= 10 * time.Millisecond
+						if animationSpeed < 10*time.Millisecond {
+							animationSpeed = 10 * time.Millisecond
+						}
+						ticker.Reset(animationSpeed)
+					case '-', '_':
+						// Slow down
+						animationSpeed += 10 * time.Millisecond
+						if animationSpeed > 200*time.Millisecond {
+							animationSpeed = 200 * time.Millisecond
+						}
+						ticker.Reset(animationSpeed)
+					}
+				}
+			}
+
+			// Handle resize events
+			if resizeEvent, ok := event.(matrix.ResizeEvent); ok {
+				// Only resize if dimensions actually changed
+				if resizeEvent.Width != width || resizeEvent.Height != height {
+					m.Resize(resizeEvent.Width, resizeEvent.Height)
+					width, height = resizeEvent.Width, resizeEvent.Height
+					// Reinitialize columns for new width
+					newColumns := make([]*Column, width)
+					for i := 0; i < width; i++ {
+						if i < len(columns) {
+							newColumns[i] = columns[i]
+							newColumns[i].x = i // Update x position
+						} else {
+							newColumns[i] = &Column{
+								x:      i,
+								y:      -rand.Intn(height),
+								speed:  1 + rand.Intn(3),
+								length: 10 + rand.Intn(20),
+								chars:  make([]rune, 30),
+							}
+							for j := range newColumns[i].chars {
+								newColumns[i].chars[j] = chars[rand.Intn(len(chars))]
+							}
+						}
+					}
+					columns = newColumns
+				}
+			}
+
+		case <-ticker.C:
+			// Animation frame
+			if paused {
+				continue
+			}
 		// Calculate FPS
 		now := time.Now()
 		frameDuration := now.Sub(lastFrameTime).Seconds()
@@ -121,20 +232,34 @@ func main() {
 			}
 		}
 
-		// Draw FPS counter in top-right corner
-		fpsText := fmt.Sprintf("FPS: %.0f", fps)
-		fpsCell := matrix.NewCell(' ', lipgloss.Color("#FFFFFF"), lipgloss.Color("#000000"))
-		fpsX := width - len(fpsText)
-		if fpsX > 0 {
-			m.PutString(fpsX, 0, fpsText, fpsCell)
+			// Draw FPS counter and controls in top-right corner
+			statusText := fmt.Sprintf("FPS: %.0f | Speed: %dms | Size: %dx%d | ESC/Q:Quit | +/-:Speed | Space:Pause",
+				fps, animationSpeed.Milliseconds(), width, height)
+			statusCell := matrix.NewCell(' ', lipgloss.Color("#FFFFFF"), lipgloss.Color("#000000"))
+			statusX := width - len(statusText)
+			if statusX < 0 {
+				statusX = 0
+			}
+			if statusX < width {
+				m.PutString(statusX, 0, statusText, statusCell)
+			}
+
+			// Show pause indicator
+			if paused {
+				pauseText := "PAUSED"
+				pauseCell := matrix.NewCell(' ', lipgloss.Color("#FF0000"), lipgloss.Color("#000000")).
+					AddStyle(matrix.StyleBold)
+				pauseX := (width - len(pauseText)) / 2
+				if pauseX >= 0 && height > 0 {
+					m.PutString(pauseX, height/2, pauseText, pauseCell)
+				}
+			}
+
+			// Render and display
+			fmt.Print("\033[H") // Move cursor to home position
+			fmt.Print(m.Render())
+
+			frame++
 		}
-
-		// Render and display
-		fmt.Print("\033[H") // Move cursor to home position
-		fmt.Print(m.Render())
-
-		// Sleep for animation timing
-		// time.Sleep(20 * time.Millisecond)
-		frame++
 	}
 }
