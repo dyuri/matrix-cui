@@ -12,11 +12,12 @@ import (
 
 // Terminal manages terminal state for fullscreen TUI applications.
 type Terminal struct {
-	input       *os.File
-	output      *os.File
-	origState   *term.State
-	inRawMode   bool
-	inAltScreen bool
+	input          *os.File
+	output         *os.File
+	origState      *term.State
+	inRawMode      bool
+	inAltScreen    bool
+	mouseTracking  bool
 }
 
 // NewTerminal creates a new terminal manager.
@@ -115,6 +116,46 @@ func (t *Terminal) ShowCursor() error {
 	return err
 }
 
+// EnableMouseTracking enables mouse event tracking.
+// This enables button press/release and motion tracking.
+func (t *Terminal) EnableMouseTracking() error {
+	if t.mouseTracking {
+		return fmt.Errorf("mouse tracking already enabled")
+	}
+
+	// Enable mouse tracking:
+	// \033[?1000h - Enable basic mouse tracking (press/release)
+	// \033[?1002h - Enable button motion tracking (drag)
+	// \033[?1003h - Enable all motion tracking (hover)
+	// \033[?1006h - Enable SGR extended mouse mode (better coordinate support)
+	sequences := "\033[?1000h\033[?1002h\033[?1006h"
+
+	if _, err := io.WriteString(t.output, sequences); err != nil {
+		return fmt.Errorf("failed to enable mouse tracking: %w", err)
+	}
+
+	t.output.Sync()
+	t.mouseTracking = true
+	return nil
+}
+
+// DisableMouseTracking disables mouse event tracking.
+func (t *Terminal) DisableMouseTracking() error {
+	if !t.mouseTracking {
+		return nil
+	}
+
+	// Disable mouse tracking (reverse order of enable)
+	sequences := "\033[?1006l\033[?1002l\033[?1000l"
+
+	if _, err := io.WriteString(t.output, sequences); err != nil {
+		return fmt.Errorf("failed to disable mouse tracking: %w", err)
+	}
+
+	t.mouseTracking = false
+	return nil
+}
+
 // ClearScreen clears the entire screen.
 func (t *Terminal) ClearScreen() error {
 	_, err := io.WriteString(t.output, "\033[2J\033[H")
@@ -126,7 +167,12 @@ func (t *Terminal) ClearScreen() error {
 func (t *Terminal) Close() error {
 	var firstErr error
 
-	// Exit alternate screen first
+	// Disable mouse tracking first
+	if err := t.DisableMouseTracking(); err != nil && firstErr == nil {
+		firstErr = err
+	}
+
+	// Exit alternate screen
 	if err := t.ExitAltScreen(); err != nil && firstErr == nil {
 		firstErr = err
 	}

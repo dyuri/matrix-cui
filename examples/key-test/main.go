@@ -21,7 +21,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Key Test - Press keys to see what is detected. Press Ctrl+C to exit.")
+	// Enable mouse tracking to test mouse events too
+	if err := term.EnableMouseTracking(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to enable mouse tracking: %v\n", err)
+	}
+
+	fmt.Println("Key Test - Press keys or click mouse to see what is detected. Press Ctrl+C to exit.")
 	fmt.Println("---")
 
 	// Start event reader
@@ -51,6 +56,9 @@ func main() {
 			}
 		case matrix.ResizeEvent:
 			fmt.Printf("\r\nResize: %dx%d", e.Width, e.Height)
+		case matrix.MouseEvent:
+			fmt.Printf("\r\nMouse: %s %s at (%d,%d) [Alt=%v Ctrl=%v Shift=%v]",
+				e.Button.String(), e.Action.String(), e.X, e.Y, e.Alt, e.Ctrl, e.Shift)
 		}
 	}
 }

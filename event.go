@@ -11,6 +11,7 @@ type EventType int
 const (
 	EventTypeKey EventType = iota
 	EventTypeResize
+	EventTypeMouse
 )
 
 // KeyEvent represents a keyboard event.
@@ -36,6 +37,77 @@ type ResizeEvent struct {
 // Type returns the event type.
 func (r ResizeEvent) Type() EventType {
 	return EventTypeResize
+}
+
+// MouseEvent represents a mouse event.
+type MouseEvent struct {
+	X      int          // Column position (0-based)
+	Y      int          // Row position (0-based)
+	Button MouseButton  // Which button
+	Action MouseAction  // What action (press, release, move)
+	Alt    bool         // Alt modifier
+	Ctrl   bool         // Ctrl modifier
+	Shift  bool         // Shift modifier
+}
+
+// Type returns the event type.
+func (m MouseEvent) Type() EventType {
+	return EventTypeMouse
+}
+
+// MouseButton represents mouse buttons.
+type MouseButton int
+
+const (
+	MouseButtonNone MouseButton = iota
+	MouseButtonLeft
+	MouseButtonMiddle
+	MouseButtonRight
+	MouseButtonWheelUp
+	MouseButtonWheelDown
+)
+
+// String returns a string representation of the mouse button.
+func (mb MouseButton) String() string {
+	switch mb {
+	case MouseButtonNone:
+		return "None"
+	case MouseButtonLeft:
+		return "Left"
+	case MouseButtonMiddle:
+		return "Middle"
+	case MouseButtonRight:
+		return "Right"
+	case MouseButtonWheelUp:
+		return "WheelUp"
+	case MouseButtonWheelDown:
+		return "WheelDown"
+	default:
+		return "Unknown"
+	}
+}
+
+// MouseAction represents mouse actions.
+type MouseAction int
+
+const (
+	MouseActionPress MouseAction = iota
+	MouseActionRelease
+	MouseActionMove
+)
+
+// String returns a string representation of the mouse action.
+func (ma MouseAction) String() string {
+	switch ma {
+	case MouseActionPress:
+		return "Press"
+	case MouseActionRelease:
+		return "Release"
+	case MouseActionMove:
+		return "Move"
+	default:
+		return "Unknown"
+	}
 }
 
 // Key represents special keys (non-printable characters).

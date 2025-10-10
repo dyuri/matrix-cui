@@ -315,3 +315,100 @@ func TestStartEventChannel(t *testing.T) {
 		t.Error("Third event is not KeyEvent")
 	}
 }
+
+func TestMouseEventSGR(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected MouseEvent
+	}{
+		// Left button press at (5, 10)
+		{"\x1b[<0;6;11M", MouseEvent{X: 5, Y: 10, Button: MouseButtonLeft, Action: MouseActionPress}},
+		// Left button release at (5, 10)
+		{"\x1b[<0;6;11m", MouseEvent{X: 5, Y: 10, Button: MouseButtonLeft, Action: MouseActionRelease}},
+		// Middle button press at (0, 0)
+		{"\x1b[<1;1;1M", MouseEvent{X: 0, Y: 0, Button: MouseButtonMiddle, Action: MouseActionPress}},
+		// Right button press at (20, 30)
+		{"\x1b[<2;21;31M", MouseEvent{X: 20, Y: 30, Button: MouseButtonRight, Action: MouseActionPress}},
+		// Wheel up at (10, 10)
+		{"\x1b[<64;11;11M", MouseEvent{X: 10, Y: 10, Button: MouseButtonWheelUp, Action: MouseActionPress}},
+		// Wheel down at (10, 10)
+		{"\x1b[<65;11;11M", MouseEvent{X: 10, Y: 10, Button: MouseButtonWheelDown, Action: MouseActionPress}},
+		// Left button drag (motion) at (15, 20)
+		{"\x1b[<32;16;21M", MouseEvent{X: 15, Y: 20, Button: MouseButtonLeft, Action: MouseActionMove}},
+	}
+
+	for _, tt := range tests {
+		reader := newTestEventReader(tt.input)
+		event, err := reader.ReadEvent()
+		if err != nil {
+			t.Errorf("ReadEvent(%q) error: %v", tt.input, err)
+			continue
+		}
+
+		mouseEvent, ok := event.(MouseEvent)
+		if !ok {
+			t.Errorf("ReadEvent(%q) did not return MouseEvent", tt.input)
+			continue
+		}
+
+		if mouseEvent.X != tt.expected.X || mouseEvent.Y != tt.expected.Y {
+			t.Errorf("ReadEvent(%q) position = (%d, %d), expected (%d, %d)",
+				tt.input, mouseEvent.X, mouseEvent.Y, tt.expected.X, tt.expected.Y)
+		}
+
+		if mouseEvent.Button != tt.expected.Button {
+			t.Errorf("ReadEvent(%q) button = %v, expected %v",
+				tt.input, mouseEvent.Button, tt.expected.Button)
+		}
+
+		if mouseEvent.Action != tt.expected.Action {
+			t.Errorf("ReadEvent(%q) action = %v, expected %v",
+				tt.input, mouseEvent.Action, tt.expected.Action)
+		}
+	}
+}
+
+func TestMouseButtonString(t *testing.T) {
+	tests := []struct {
+		button   MouseButton
+		expected string
+	}{
+		{MouseButtonLeft, "Left"},
+		{MouseButtonMiddle, "Middle"},
+		{MouseButtonRight, "Right"},
+		{MouseButtonWheelUp, "WheelUp"},
+		{MouseButtonWheelDown, "WheelDown"},
+	}
+
+	for _, tt := range tests {
+		result := tt.button.String()
+		if result != tt.expected {
+			t.Errorf("MouseButton(%v).String() = %q, expected %q", tt.button, result, tt.expected)
+		}
+	}
+}
+
+func TestMouseActionString(t *testing.T) {
+	tests := []struct {
+		action   MouseAction
+		expected string
+	}{
+		{MouseActionPress, "Press"},
+		{MouseActionRelease, "Release"},
+		{MouseActionMove, "Move"},
+	}
+
+	for _, tt := range tests {
+		result := tt.action.String()
+		if result != tt.expected {
+			t.Errorf("MouseAction(%v).String() = %q, expected %q", tt.action, result, tt.expected)
+		}
+	}
+}
+
+func TestMouseEventType(t *testing.T) {
+	mouseEvent := MouseEvent{X: 0, Y: 0, Button: MouseButtonLeft, Action: MouseActionPress}
+	if mouseEvent.Type() != EventTypeMouse {
+		t.Errorf("MouseEvent.Type() = %v, expected %v", mouseEvent.Type(), EventTypeMouse)
+	}
+}

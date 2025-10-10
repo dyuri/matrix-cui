@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -162,6 +164,11 @@ func (er *EventReader) readCSISequence() (Event, error) {
 func (er *EventReader) parseCSICommand(cmd byte, params []byte) Event {
 	paramsStr := string(params)
 
+	// Check for SGR mouse events (format: <Cb;Cx;CyM or <Cb;Cx;Cym)
+	if len(params) > 0 && params[0] == '<' && (cmd == 'M' || cmd == 'm') {
+		return er.parseSGRMouse(paramsStr[1:], cmd)
+	}
+
 	switch cmd {
 	case 'A':
 		return KeyEvent{Key: KeyUp}
@@ -277,6 +284,91 @@ func (er *EventReader) handleControlChar(b byte) Event {
 
 	// Unknown control char
 	return KeyEvent{Key: KeyNone, Rune: rune(b)}
+}
+
+// parseSGRMouse parses SGR extended mouse format.
+// Format: Cb;Cx;Cy where Cb=button code, Cx/Cy=coordinates
+// cmd is 'M' for press or 'm' for release
+func (er *EventReader) parseSGRMouse(params string, cmd byte) Event {
+	// Parse parameters: button;x;y
+	parts := strings.Split(params, ";")
+	if len(parts) != 3 {
+		// Invalid mouse sequence
+		return KeyEvent{Key: KeyEscape}
+	}
+
+	button, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return KeyEvent{Key: KeyEscape}
+	}
+
+	x, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return KeyEvent{Key: KeyEscape}
+	}
+
+	y, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return KeyEvent{Key: KeyEscape}
+	}
+
+	// Convert from 1-based to 0-based coordinates
+	x--
+	y--
+
+	// Parse button and modifiers
+	// Button encoding:
+	// bits 0-1: button (0=left, 1=middle, 2=right, 3=release/motion)
+	// bit 2: shift
+	// bit 3: meta/alt
+	// bit 4: ctrl
+	// bits 5-6: motion (0=no, 1=button1, 2=button2, 3=button3)
+	// bit 6-7: wheel (64=wheel up, 65=wheel down)
+
+	mouseEvent := MouseEvent{
+		X:     x,
+		Y:     y,
+		Shift: (button & 4) != 0,
+		Alt:   (button & 8) != 0,
+		Ctrl:  (button & 16) != 0,
+	}
+
+	// Determine action
+	if cmd == 'm' {
+		mouseEvent.Action = MouseActionRelease
+	} else if (button & 32) != 0 {
+		// Motion bit is set
+		mouseEvent.Action = MouseActionMove
+	} else {
+		mouseEvent.Action = MouseActionPress
+	}
+
+	// Determine button
+	buttonBits := button & 3
+	if button >= 64 && button <= 65 {
+		// Wheel events
+		if button == 64 {
+			mouseEvent.Button = MouseButtonWheelUp
+		} else {
+			mouseEvent.Button = MouseButtonWheelDown
+		}
+		mouseEvent.Action = MouseActionPress // Wheel events are always "press"
+	} else if buttonBits == 3 || mouseEvent.Action == MouseActionRelease {
+		// Button 3 or release event - may not know exact button
+		// For now, assume left button on release if we don't know
+		mouseEvent.Button = MouseButtonLeft
+	} else {
+		switch buttonBits {
+		case 0:
+			mouseEvent.Button = MouseButtonLeft
+		case 1:
+			mouseEvent.Button = MouseButtonMiddle
+		case 2:
+			mouseEvent.Button = MouseButtonRight
+		}
+	}
+
+	return mouseEvent
 }
 
 // startResizeListener starts listening for terminal resize signals.

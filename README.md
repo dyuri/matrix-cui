@@ -13,6 +13,8 @@ This initial version serves as an emulation layer, converting the matrix API to 
 - **Simple API**: Set cells by position with `Put(x, y, cell)`
 - **Rich Styling**: Foreground/background colors, bold, italic, underline, and more
 - **Flexible**: Create matrices of any size or auto-detect terminal dimensions
+- **Event Handling**: Channel-based keyboard and mouse input
+- **Fullscreen TUI**: Raw mode, alternate screen buffer, mouse tracking
 - **Efficient**: ANSI rendering optimized with Lipgloss
 - **Lightweight**: Minimal dependencies
 
@@ -157,18 +159,209 @@ m.RenderRow(y)
 m.RenderCol(x)
 ```
 
+## Event Handling
+
+Matrix CUI provides a complete event handling system for interactive TUI applications.
+
+### Terminal Setup
+
+```go
+// Create and setup terminal for fullscreen TUI
+term, err := matrixcui.NewTerminal()
+if err != nil {
+    log.Fatal(err)
+}
+defer term.Close()
+
+// Enter fullscreen mode (raw mode + alternate screen + hide cursor)
+if err := term.SetupFullscreen(); err != nil {
+    log.Fatal(err)
+}
+
+// Optional: Enable mouse tracking
+if err := term.EnableMouseTracking(); err != nil {
+    log.Fatal(err)
+}
+
+// Optional: Setup cleanup on Ctrl+C
+term.SetupCleanupOnSignal()
+```
+
+### Event Loop
+
+```go
+// Create event reader
+reader := matrixcui.NewEventReader()
+eventChan, cleanup := matrixcui.StartEventChannel(reader)
+defer cleanup()
+
+// Event loop
+for event := range eventChan {
+    switch e := event.(type) {
+    case matrixcui.KeyEvent:
+        // Handle keyboard input
+        if e.Key == matrixcui.KeyEscape {
+            return // Exit
+        }
+        if e.Key == matrixcui.KeyNone {
+            // Regular character
+            fmt.Printf("Typed: %c\n", e.Rune)
+        }
+
+    case matrixcui.MouseEvent:
+        // Handle mouse input
+        if e.Action == matrixcui.MouseActionPress {
+            fmt.Printf("Clicked at (%d, %d)\n", e.X, e.Y)
+        }
+
+    case matrixcui.ResizeEvent:
+        // Handle terminal resize
+        m.Resize(e.Width, e.Height)
+    }
+}
+```
+
+### Keyboard Events
+
+```go
+type KeyEvent struct {
+    Key   Key    // Special key (KeyEnter, KeyEscape, KeyUp, etc.)
+    Rune  rune   // Character typed (if printable)
+    Alt   bool   // Alt modifier
+    Ctrl  bool   // Ctrl modifier
+    Shift bool   // Shift modifier
+}
+```
+
+**Supported Keys:**
+- Navigation: `KeyUp`, `KeyDown`, `KeyLeft`, `KeyRight`, `KeyHome`, `KeyEnd`, `KeyPageUp`, `KeyPageDown`
+- Control: `KeyEnter`, `KeyEscape`, `KeyBackspace`, `KeyTab`, `KeyDelete`, `KeyInsert`
+- Function: `KeyF1` through `KeyF12`
+- Shortcuts: `KeyCtrlC`, `KeyCtrlD`, `KeyCtrlZ`
+
+### Mouse Events
+
+```go
+type MouseEvent struct {
+    X      int          // Column position (0-based)
+    Y      int          // Row position (0-based)
+    Button MouseButton  // Which button
+    Action MouseAction  // Press, Release, or Move
+    Alt    bool         // Alt modifier
+    Ctrl   bool         // Ctrl modifier
+    Shift  bool         // Shift modifier
+}
+```
+
+**Mouse Buttons:**
+- `MouseButtonLeft`, `MouseButtonMiddle`, `MouseButtonRight`
+- `MouseButtonWheelUp`, `MouseButtonWheelDown`
+
+**Mouse Actions:**
+- `MouseActionPress` - Button pressed
+- `MouseActionRelease` - Button released
+- `MouseActionMove` - Mouse moved while button held (drag)
+
+### Complete Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+
+    "github.com/charmbracelet/lipgloss"
+    matrixcui "github.com/dyuri/matrix-cui"
+)
+
+func main() {
+    // Setup terminal
+    term, _ := matrixcui.NewTerminal()
+    defer term.Close()
+    term.SetupFullscreen()
+    term.EnableMouseTracking()
+    term.SetupCleanupOnSignal()
+
+    // Create matrix
+    m := matrixcui.NewMatrixAuto()
+
+    // Event loop
+    reader := matrixcui.NewEventReader()
+    eventChan, cleanup := matrixcui.StartEventChannel(reader)
+    defer cleanup()
+
+    for event := range eventChan {
+        if keyEvent, ok := event.(matrixcui.KeyEvent); ok {
+            if keyEvent.Key == matrixcui.KeyEscape {
+                return
+            }
+        }
+
+        if mouseEvent, ok := event.(matrixcui.MouseEvent); ok {
+            if mouseEvent.Action == matrixcui.MouseActionPress {
+                // Paint on click
+                cell := matrixcui.NewCell('█', lipgloss.Color("#00FF00"), lipgloss.Color("#000000"))
+                m.Put(mouseEvent.X, mouseEvent.Y, cell)
+            }
+        }
+
+        // Render
+        fmt.Print("\033[H")
+        fmt.Print(m.Render())
+    }
+}
+```
+
 ## Examples
 
-See the [examples/demo.go](examples/demo.go) file for a complete demonstration including:
-- Basic text with colors
+The repository includes several example programs demonstrating different features:
+
+### Simple Demo (`examples/simple-demo/`)
+Basic demonstration of the matrix API:
+- Text rendering with colors
 - Drawing boxes
-- Multiple styles
+- Multiple text styles
 - Simple animation
 
-Run the demo:
 ```bash
-cd examples
+cd examples/simple-demo
 go run demo.go
+```
+
+### Matrix Rain (`examples/matrix-rain/`)
+Interactive Matrix-style falling text animation:
+- Full terminal size usage
+- Keyboard event handling (ESC/Q to quit, +/- for speed, Space to pause)
+- Terminal resize handling
+- Real-time FPS display
+
+```bash
+cd examples/matrix-rain
+go run main.go
+```
+
+### Interactive Paint (`examples/interactive-paint/`)
+Mouse-driven drawing application:
+- Click and drag to paint
+- Number keys (1-9) to change colors
+- 'C' to clear canvas
+- Full mouse tracking with drag support
+
+```bash
+cd examples/interactive-paint
+go run main.go
+```
+
+### Key Test (`examples/key-test/`)
+Event debugging tool:
+- Displays all keyboard and mouse events
+- Useful for testing input handling
+- Shows event details (modifiers, coordinates, etc.)
+
+```bash
+cd examples/key-test
+go run main.go
 ```
 
 ## Colors
@@ -182,14 +375,25 @@ See [Lipgloss documentation](https://github.com/charmbracelet/lipgloss) for more
 
 ## Roadmap
 
-This is the first step in experimenting with the Matrix CUI API. Future plans include:
+This is an experimental project under active development. Current status:
 
+- [x] **Matrix API** - Simple 2D cell-based interface
+- [x] **ANSI Rendering** - Lipgloss-based terminal output with raw mode support
+- [x] **Event Handling** - Keyboard and mouse input via channels
+- [x] **Terminal Management** - Raw mode, alternate screen, mouse tracking
 - [ ] Native rendering backends (bypass ANSI emulation)
-- [ ] Event handling system
 - [ ] Layout helpers and containers
 - [ ] Diff-based rendering for efficiency
 - [ ] Unicode and wide character support improvements
 - [ ] Integration with other TUI frameworks
+
+## Design Philosophy
+
+Matrix CUI is designed to be:
+- **Simple**: Intuitive API without forcing architectural patterns
+- **Unopinionated**: Provides primitives, you build the patterns
+- **Go-idiomatic**: Channel-based events, value semantics for cells
+- **Minimal**: Small dependency footprint, focused scope
 
 ## Contributing
 
