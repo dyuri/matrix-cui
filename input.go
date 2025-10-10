@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/charmbracelet/x/term"
 )
@@ -86,36 +87,54 @@ func (er *EventReader) readKeyEvent() (Event, error) {
 
 // readEscapeSequence reads an ANSI escape sequence.
 func (er *EventReader) readEscapeSequence() (Event, error) {
-	// Peek to see if there's more data
-	next, err := er.reader.Peek(1)
-	if err != nil {
-		// Just ESC key pressed
+	// Use a channel to read with timeout
+	type peekResult struct {
+		data []byte
+		err  error
+	}
+
+	peekChan := make(chan peekResult, 1)
+	go func() {
+		data, err := er.reader.Peek(1)
+		peekChan <- peekResult{data, err}
+	}()
+
+	// Wait for peek with timeout
+	select {
+	case result := <-peekChan:
+		if result.err != nil {
+			// Error peeking, treat as standalone ESC
+			return KeyEvent{Key: KeyEscape}, nil
+		}
+
+		// Check for CSI sequence (ESC [)
+		if result.data[0] == '[' {
+			er.reader.ReadByte() // consume '['
+			return er.readCSISequence()
+		}
+
+		// Check for SS3 sequence (ESC O)
+		if result.data[0] == 'O' {
+			er.reader.ReadByte() // consume 'O'
+			return er.readSS3Sequence()
+		}
+
+		// Alt + key combination
+		altKey, err := er.reader.ReadByte()
+		if err != nil {
+			return KeyEvent{Key: KeyEscape}, nil
+		}
+
+		return KeyEvent{
+			Key:  KeyNone,
+			Rune: rune(altKey),
+			Alt:  true,
+		}, nil
+
+	case <-time.After(50 * time.Millisecond):
+		// Timeout - standalone ESC key
 		return KeyEvent{Key: KeyEscape}, nil
 	}
-
-	// Check for CSI sequence (ESC [)
-	if next[0] == '[' {
-		er.reader.ReadByte() // consume '['
-		return er.readCSISequence()
-	}
-
-	// Check for SS3 sequence (ESC O)
-	if next[0] == 'O' {
-		er.reader.ReadByte() // consume 'O'
-		return er.readSS3Sequence()
-	}
-
-	// Alt + key combination
-	altKey, err := er.reader.ReadByte()
-	if err != nil {
-		return KeyEvent{Key: KeyEscape}, nil
-	}
-
-	return KeyEvent{
-		Key:  KeyNone,
-		Rune: rune(altKey),
-		Alt:  true,
-	}, nil
 }
 
 // readCSISequence reads a CSI (Control Sequence Introducer) sequence.
