@@ -1,0 +1,6 @@
+Server listening on /tmp/matrix-cui.sock
+Failed to send response: failed to write data: short write
+Failed to send response: failed to write data: short write
+Failed to send response: failed to write data: short write
+
+Shutting down server...

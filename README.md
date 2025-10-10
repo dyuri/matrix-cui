@@ -364,6 +364,148 @@ cd examples/key-test
 go run main.go
 ```
 
+## Remote Access via Network Protocol
+
+Matrix CUI includes a network protocol that enables remote clients to control a terminal display over Unix sockets, TCP, or WebSocket connections. This allows multiple applications to share a single terminal or enables web-based terminal clients.
+
+### Architecture
+
+The network protocol uses a **server-side rendering** model:
+- Server owns the terminal and Matrix instance
+- Clients send commands to modify the matrix (`Put`, `Get`, `Clear`, etc.)
+- Server broadcasts terminal events (keyboard, mouse, resize) to subscribed clients
+- Protocol is transport-agnostic (Unix socket, TCP, WebSocket)
+
+### Quick Start
+
+**1. Start the server:**
+
+```bash
+cd examples/matrix-server
+go run main.go
+```
+
+The server creates a fullscreen TUI and listens on `/tmp/matrix-cui.sock`.
+
+**2. Connect a client:**
+
+```go
+package main
+
+import (
+    "github.com/charmbracelet/lipgloss"
+    matrixcui "github.com/dyuri/matrix-cui"
+    "github.com/dyuri/matrix-cui/client"
+)
+
+func main() {
+    // Connect to server
+    m, err := client.NewMatrixRemote("unix:///tmp/matrix-cui.sock")
+    if err != nil {
+        panic(err)
+    }
+    defer m.Close()
+
+    // Use same API as local Matrix
+    cell := matrixcui.NewCell('X', lipgloss.Color("#00FF00"), lipgloss.Color(""))
+    m.Put(10, 5, cell)
+
+    // Subscribe to events
+    m.Subscribe([]string{"key", "mouse", "resize"})
+    for event := range m.EventChannel() {
+        // Handle events...
+    }
+}
+```
+
+**3. Or try the remote paint demo:**
+
+```bash
+# In one terminal:
+cd examples/matrix-server && go run main.go
+
+# In another terminal:
+cd examples/remote-paint && go run main.go
+```
+
+### Remote Matrix API
+
+The `RemoteMatrix` type implements the same interface as the local `Matrix`:
+
+```go
+// All standard Matrix operations work remotely
+width := m.Width()
+height := m.Height()
+m.Put(x, y, cell)
+cell := m.Get(x, y)
+m.Clear()
+m.Fill(cell)
+m.PutString(x, y, "text", cell)
+m.Resize(width, height)
+
+// Event subscription (remote-specific)
+m.Subscribe([]string{"key", "mouse", "resize"})
+m.Unsubscribe()
+eventChan := m.EventChannel()
+```
+
+### Protocol Details
+
+The protocol uses **JSON message envelopes** with three message types:
+
+1. **Commands** (Client → Server): `put`, `get`, `clear`, `fill`, `putString`, `resize`, `subscribe`, etc.
+2. **Responses** (Server → Client): Success/failure responses with optional data
+3. **Events** (Server → Clients): Keyboard, mouse, and resize events
+
+**Message format:**
+```json
+{
+  "type": "command|response|event",
+  "id": "uuid-for-request-response",
+  "payload": { ... }
+}
+```
+
+See [PROTOCOL.md](PROTOCOL.md) for the complete protocol specification.
+
+### Supported Transports
+
+- **Unix Sockets**: `unix:///path/to/socket` (recommended for local IPC)
+- **TCP**: `tcp://host:port` (for network access)
+- **WebSocket**: `ws://host:port/path` (planned for browser clients)
+
+### Use Cases
+
+- **Terminal Multiplexer**: Multiple applications controlling one terminal
+- **Web Dashboard**: Browser-based terminal interface via WebSocket
+- **Remote Debugging**: Inspect and modify TUI state from another process
+- **Testing**: Automated UI testing with programmatic control
+- **Collaboration**: Multiple users interacting with the same terminal
+
+### Examples
+
+#### Matrix Server (`examples/matrix-server/`)
+Standalone server that owns a fullscreen terminal:
+- Listens on Unix socket (`/tmp/matrix-cui.sock`)
+- Forwards keyboard and mouse events to clients
+- Renders matrix to terminal at ~60 FPS
+- Press 'q' or Ctrl+C to quit
+
+#### Remote Paint (`examples/remote-paint/`)
+Remote version of the interactive paint demo:
+- Connects to matrix-server via Unix socket
+- Same functionality as local interactive-paint
+- Demonstrates transparent API usage (local vs remote)
+
+### Future Features (Phase 2-3)
+
+- **TCP with TLS**: Encrypted network connections
+- **WebSocket Support**: Browser-based clients with Canvas rendering
+- **Authentication**: Token-based client authentication
+- **Multi-Session**: Isolated matrices per client
+- **Delta Encoding**: Only transmit changed cells for efficiency
+- **Compression**: gzip for WebSocket, msgpack for binary protocol
+
 ## Colors
 
 Matrix CUI uses Lipgloss colors, which supports:
@@ -381,6 +523,8 @@ This is an experimental project under active development. Current status:
 - [x] **ANSI Rendering** - Lipgloss-based terminal output with raw mode support
 - [x] **Event Handling** - Keyboard and mouse input via channels
 - [x] **Terminal Management** - Raw mode, alternate screen, mouse tracking
+- [x] **Network Protocol** - Remote access via Unix sockets and TCP (Phase 1)
+- [ ] WebSocket support for browser clients (Phase 3)
 - [ ] Native rendering backends (bypass ANSI emulation)
 - [ ] Layout helpers and containers
 - [ ] Diff-based rendering for efficiency
