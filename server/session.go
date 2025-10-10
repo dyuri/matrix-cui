@@ -23,8 +23,9 @@ type Session struct {
 	subscribed   bool
 	eventFilter  map[string]bool // Which event types to forward
 
-	writer *bufio.Writer
-	reader *bufio.Reader
+	writerMu sync.Mutex // Protects writer from concurrent access
+	writer   *bufio.Writer
+	reader   *bufio.Reader
 }
 
 // NewSession creates a new session for a connection.
@@ -80,7 +81,11 @@ func (sess *Session) Handle() {
 			continue
 		}
 
-		if err := sendEnvelope(sess.writer, respEnv); err != nil {
+		sess.writerMu.Lock()
+		err = sendEnvelope(sess.writer, respEnv)
+		sess.writerMu.Unlock()
+
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to send response: %v\n", err)
 			return
 		}
@@ -114,7 +119,11 @@ func (sess *Session) handleSubscribe(id string, cmd protocol.Command) {
 		return
 	}
 
-	if err := sendEnvelope(sess.writer, respEnv); err != nil {
+	sess.writerMu.Lock()
+	err = sendEnvelope(sess.writer, respEnv)
+	sess.writerMu.Unlock()
+
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to send subscribe response: %v\n", err)
 	}
 }
@@ -135,7 +144,11 @@ func (sess *Session) handleUnsubscribe(id string, cmd protocol.Command) {
 		return
 	}
 
-	if err := sendEnvelope(sess.writer, respEnv); err != nil {
+	sess.writerMu.Lock()
+	err = sendEnvelope(sess.writer, respEnv)
+	sess.writerMu.Unlock()
+
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to send unsubscribe response: %v\n", err)
 	}
 }
@@ -196,7 +209,11 @@ func (sess *Session) sendEvent(event matrixcui.Event) {
 		return
 	}
 
-	if err := sendEnvelope(sess.writer, env); err != nil {
+	sess.writerMu.Lock()
+	err = sendEnvelope(sess.writer, env)
+	sess.writerMu.Unlock()
+
+	if err != nil {
 		// If we can't send, the connection is probably dead
 		// The session will be cleaned up when Handle() returns
 		return

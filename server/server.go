@@ -251,14 +251,21 @@ func sendEnvelope(writer *bufio.Writer, env protocol.Envelope) error {
 		return fmt.Errorf("failed to marshal envelope: %w", err)
 	}
 
-	if _, err := writer.Write(data); err != nil {
+	// Write JSON data and check for short writes
+	n, err := writer.Write(data)
+	if err != nil {
 		return fmt.Errorf("failed to write data: %w", err)
 	}
+	if n != len(data) {
+		return fmt.Errorf("short write: wrote %d bytes, expected %d", n, len(data))
+	}
 
+	// Write newline
 	if _, err := writer.WriteString("\n"); err != nil {
 		return fmt.Errorf("failed to write newline: %w", err)
 	}
 
+	// Flush to ensure data is sent
 	if err := writer.Flush(); err != nil {
 		return fmt.Errorf("failed to flush: %w", err)
 	}
