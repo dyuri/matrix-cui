@@ -19,8 +19,13 @@ type Server struct {
 	terminal  *matrixcui.Terminal
 	eventChan <-chan matrixcui.Event
 
-	sessionsMu sync.RWMutex
-	sessions   map[string]*Session
+	listenerMu sync.Mutex
+	listener   net.Listener
+
+	sessionsMu    sync.RWMutex
+	sessions      map[string]*Session
+	hadClient     bool
+	noClientsChan chan struct{} // Closed when all clients disconnect after having at least one
 
 	stopChan chan struct{}
 	wg       sync.WaitGroup
@@ -29,10 +34,11 @@ type Server struct {
 // NewServer creates a new server with the given matrix and terminal.
 func NewServer(matrix *matrixcui.Matrix, terminal *matrixcui.Terminal) *Server {
 	return &Server{
-		matrix:   matrix,
-		terminal: terminal,
-		sessions: make(map[string]*Session),
-		stopChan: make(chan struct{}),
+		matrix:        matrix,
+		terminal:      terminal,
+		sessions:      make(map[string]*Session),
+		noClientsChan: make(chan struct{}),
+		stopChan:      make(chan struct{}),
 	}
 }
 
@@ -47,6 +53,10 @@ func (s *Server) ListenUnix(socketPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on unix socket: %w", err)
 	}
+
+	s.listenerMu.Lock()
+	s.listener = listener
+	s.listenerMu.Unlock()
 
 	s.wg.Add(1)
 	go func() {
@@ -70,7 +80,21 @@ func (s *Server) StartEventForwarding(eventChan <-chan matrixcui.Event) {
 // Stop gracefully stops the server.
 func (s *Server) Stop() {
 	close(s.stopChan)
+
+	// Close the listener to unblock Accept()
+	s.listenerMu.Lock()
+	if s.listener != nil {
+		s.listener.Close()
+	}
+	s.listenerMu.Unlock()
+
 	s.wg.Wait()
+}
+
+// NoClientsChannel returns a channel that gets closed when all clients disconnect
+// after at least one client has connected.
+func (s *Server) NoClientsChannel() <-chan struct{} {
+	return s.noClientsChan
 }
 
 // acceptLoop accepts incoming connections.
@@ -131,6 +155,7 @@ func (s *Server) registerSession(session *Session) {
 	s.sessionsMu.Lock()
 	defer s.sessionsMu.Unlock()
 	s.sessions[session.id] = session
+	s.hadClient = true
 }
 
 // unregisterSession removes a session from the server.
@@ -138,6 +163,16 @@ func (s *Server) unregisterSession(session *Session) {
 	s.sessionsMu.Lock()
 	defer s.sessionsMu.Unlock()
 	delete(s.sessions, session.id)
+
+	// If we had a client and now have none, signal that all clients disconnected
+	if s.hadClient && len(s.sessions) == 0 {
+		select {
+		case <-s.noClientsChan:
+			// Already closed
+		default:
+			close(s.noClientsChan)
+		}
+	}
 }
 
 // broadcastEvent sends an event to all subscribed clients.

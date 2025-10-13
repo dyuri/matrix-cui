@@ -20,7 +20,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to create terminal: %v\n", err)
 		os.Exit(1)
 	}
-	defer term.Close()
 
 	// Setup fullscreen mode
 	if err := term.SetupFullscreen(); err != nil {
@@ -61,6 +60,9 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
+	// Get channel that signals when all clients disconnect
+	noClientsChan := srv.NoClientsChannel()
+
 	for {
 		select {
 		case <-ticker.C:
@@ -82,12 +84,20 @@ func main() {
 				m.Resize(resizeEvent.Width, resizeEvent.Height)
 			}
 
+		case <-noClientsChan:
+			// All clients disconnected
+			fmt.Fprintf(os.Stderr, "\nAll clients disconnected\n")
+			goto cleanup
+
 		case <-sigChan:
 			goto cleanup
 		}
 	}
 
 cleanup:
+	// Restore terminal first (exit alt screen)
+	term.Close()
+
 	fmt.Fprintf(os.Stderr, "\nShutting down server...\n")
 	srv.Stop()
 	os.Remove(socketPath)
