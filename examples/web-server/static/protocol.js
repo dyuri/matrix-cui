@@ -78,9 +78,13 @@ class MatrixProtocol {
     handleResponse(envelope) {
         const { id, payload } = envelope;
 
-        // Check for initial snapshot (special case without pending command)
+        // Check for special server-initiated responses
         if (id === 'snapshot') {
             this.triggerEvent('snapshot', payload);
+            return;
+        }
+        if (id === 'delta') {
+            this.triggerEvent('delta', payload);
             return;
         }
 

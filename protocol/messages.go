@@ -39,12 +39,13 @@ type Command struct {
 
 // Response represents a reply from server to client.
 type Response struct {
-	OK     bool       `json:"ok"`
-	Error  string     `json:"error,omitempty"`
-	Cell   *CellProto `json:"cell,omitempty"`
-	Width  *int       `json:"width,omitempty"`
-	Height *int       `json:"height,omitempty"`
-	Cells  [][]CellProto `json:"cells,omitempty"` // For snapshot
+	OK     bool          `json:"ok"`
+	Error  string        `json:"error,omitempty"`
+	Cell   *CellProto    `json:"cell,omitempty"`
+	Width  *int          `json:"width,omitempty"`
+	Height *int          `json:"height,omitempty"`
+	Cells  [][]CellProto `json:"cells,omitempty"`  // For full snapshot
+	Delta  []CellUpdate  `json:"delta,omitempty"`  // For delta updates
 }
 
 // EventPayload represents an event broadcast from server to clients.
@@ -75,6 +76,13 @@ type CellProto struct {
 	FG    string `json:"fg"`
 	BG    string `json:"bg"`
 	Style int    `json:"style"`
+}
+
+// CellUpdate represents a single cell update for delta encoding.
+type CellUpdate struct {
+	X    int       `json:"x"`
+	Y    int       `json:"y"`
+	Cell CellProto `json:"cell"`
 }
 
 // Helper functions for creating commands
@@ -179,6 +187,11 @@ func NewResponseSize(width, height int) Response {
 // NewResponseSnapshot creates a response with full matrix snapshot.
 func NewResponseSnapshot(width, height int, cells [][]CellProto) Response {
 	return Response{OK: true, Width: &width, Height: &height, Cells: cells}
+}
+
+// NewResponseDelta creates a response with delta updates.
+func NewResponseDelta(delta []CellUpdate) Response {
+	return Response{OK: true, Delta: delta}
 }
 
 // Helper functions for creating event payloads

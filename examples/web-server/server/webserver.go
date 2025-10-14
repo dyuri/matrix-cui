@@ -42,6 +42,11 @@ type WebServer struct {
 	browsersMu sync.RWMutex
 	browsers   map[string]*websocket.Conn
 
+	// Delta encoding state
+	lastStateMu    sync.RWMutex
+	lastState      [][]protocol.CellProto // Last broadcast state for delta encoding
+	fullSyncTicker int                    // Counter for periodic full syncs
+
 	// Event channel for browser events (Phase 2)
 	eventChan chan matrixcui.Event
 
@@ -286,20 +291,61 @@ func (ws *WebServer) broadcastSnapshotsPeriodically() {
 }
 
 // broadcastSnapshotToAll sends the current matrix state to all connected browsers.
+// Uses delta encoding to only send changed cells, with periodic full syncs.
 func (ws *WebServer) broadcastSnapshotToAll() {
 	width := ws.matrix.Width()
 	height := ws.matrix.Height()
 
-	// Get full snapshot
-	cells := protocol.MatrixToProto(ws.matrix)
+	// Get current matrix state
+	currentCells := protocol.MatrixToProto(ws.matrix)
 
-	// Create snapshot response
-	resp := protocol.NewResponseSnapshot(width, height, cells)
-	env, err := protocol.WrapResponse("snapshot", resp)
-	if err != nil {
-		log.Printf("Failed to wrap snapshot: %v", err)
-		return
+	ws.lastStateMu.Lock()
+
+	// Force full sync every 100 ticks (~5 seconds at 20 FPS) or if no last state
+	ws.fullSyncTicker++
+	forceFullSync := ws.fullSyncTicker >= 100 || ws.lastState == nil
+
+	var env protocol.Envelope
+	var err error
+
+	if forceFullSync {
+		// Send full snapshot
+		resp := protocol.NewResponseSnapshot(width, height, currentCells)
+		env, err = protocol.WrapResponse("snapshot", resp)
+		if err != nil {
+			log.Printf("Failed to wrap snapshot: %v", err)
+			ws.lastStateMu.Unlock()
+			return
+		}
+
+		// Update last state
+		ws.lastState = currentCells
+		ws.fullSyncTicker = 0
+
+	} else {
+		// Compute delta (only changed cells)
+		delta := ws.computeDelta(currentCells)
+
+		// If no changes, skip broadcast
+		if len(delta) == 0 {
+			ws.lastStateMu.Unlock()
+			return
+		}
+
+		// Send delta
+		resp := protocol.NewResponseDelta(delta)
+		env, err = protocol.WrapResponse("delta", resp)
+		if err != nil {
+			log.Printf("Failed to wrap delta: %v", err)
+			ws.lastStateMu.Unlock()
+			return
+		}
+
+		// Update last state
+		ws.lastState = currentCells
 	}
+
+	ws.lastStateMu.Unlock()
 
 	// Broadcast to all browsers
 	ws.browsersMu.RLock()
@@ -307,9 +353,64 @@ func (ws *WebServer) broadcastSnapshotToAll() {
 
 	for id, conn := range ws.browsers {
 		if err := conn.WriteJSON(env); err != nil {
-			log.Printf("Failed to send snapshot to browser %s: %v", id, err)
+			log.Printf("Failed to send update to browser %s: %v", id, err)
 		}
 	}
+}
+
+// computeDelta computes the cells that have changed since last broadcast.
+// Must be called with lastStateMu locked.
+func (ws *WebServer) computeDelta(currentCells [][]protocol.CellProto) []protocol.CellUpdate {
+	if ws.lastState == nil {
+		return nil
+	}
+
+	delta := make([]protocol.CellUpdate, 0)
+
+	height := len(currentCells)
+	for y := 0; y < height; y++ {
+		if y >= len(ws.lastState) {
+			// New row (shouldn't happen unless matrix resized)
+			for x := 0; x < len(currentCells[y]); x++ {
+				delta = append(delta, protocol.CellUpdate{
+					X:    x,
+					Y:    y,
+					Cell: currentCells[y][x],
+				})
+			}
+			continue
+		}
+
+		width := len(currentCells[y])
+		for x := 0; x < width; x++ {
+			if x >= len(ws.lastState[y]) {
+				// New column (shouldn't happen unless matrix resized)
+				delta = append(delta, protocol.CellUpdate{
+					X:    x,
+					Y:    y,
+					Cell: currentCells[y][x],
+				})
+				continue
+			}
+
+			// Compare cells
+			current := currentCells[y][x]
+			last := ws.lastState[y][x]
+
+			if current.Char != last.Char ||
+				current.FG != last.FG ||
+				current.BG != last.BG ||
+				current.Style != last.Style {
+				delta = append(delta, protocol.CellUpdate{
+					X:    x,
+					Y:    y,
+					Cell: current,
+				})
+			}
+		}
+	}
+
+	return delta
 }
 
 // handleWebSocket handles WebSocket upgrade and connection.

@@ -24,11 +24,11 @@ Instead of using a terminal for display, the web server:
 - **Matrix Ownership**: Creates and manages its own Matrix instance
 - **Socket Server**: Accepts Unix/TCP socket connections from Matrix CUI clients
 - **WebSocket Display**: Serves matrix to browsers in real-time
-- **Real-time Updates**: Matrix changes are broadcast to all connected browsers
+- **Real-time Updates**: Matrix changes are broadcast to all connected browsers (~20 FPS)
 - **Multiple Viewers**: Multiple browsers can watch the same matrix simultaneously
+- **Bi-directional Interaction**: Browsers can send keyboard and mouse events to socket clients
 - **DOM Rendering**: Fast, accessible DOM-based matrix rendering
 - **Auto-reconnect**: Browsers automatically reconnect if connection drops
-- **Event Forwarding** (Phase 2): Browser events forwarded to socket clients
 
 ## Usage
 
@@ -154,7 +154,11 @@ Now you should see:
 - Browser showing the matrix with remote-paint's drawing
 - remote-paint terminal showing your painting
 
-You can paint in remote-paint and see updates appear instantly in the browser!
+**Interaction:**
+- **Paint in terminal**: Use mouse in remote-paint terminal, see updates in browser
+- **Paint in browser**: Click and drag in browser, see updates in terminal!
+- **Keyboard in browser**: Press keys (1-9 for colors, C to clear, Q to quit) in browser
+- **Real-time sync**: All changes are instantly visible everywhere
 
 ## How It Works
 
@@ -174,15 +178,21 @@ You can paint in remote-paint and see updates appear instantly in the browser!
    - All share access to the same Matrix instance
 
 4. **Command Execution**:
-   - Commands from socket clients → execute on Matrix → implicitly visible to browsers
-   - Commands from browsers → execute on Matrix → implicitly visible to socket clients
-   - No explicit broadcasting needed for matrix updates (Phase 1)
+   - Commands from socket clients → execute on Matrix
+   - Commands from browsers → execute on Matrix
+   - All changes automatically visible via periodic snapshot broadcasts
 
-5. **Event Flow** (Phase 2):
-   - Events from browsers → forward to subscribed socket clients
-   - Allows browser to act as input device
+5. **Event Flow** (Bi-directional):
+   - **Browser → Socket Clients**: Keyboard and mouse events captured in browser, forwarded to subscribed socket clients
+   - **Socket Clients → Browser**: Matrix updates captured via periodic snapshots (~20 FPS), broadcast to all browsers
+   - Browser acts as both input device and display
 
-6. **Initial Sync**:
+6. **Periodic Snapshots**:
+   - Server broadcasts full matrix state to browsers every 50ms
+   - Only broadcasts when browsers are connected (no wasted work)
+   - Simple and reliable, good for typical usage
+
+7. **Initial Sync**:
    - When browser connects, server sends full matrix snapshot
    - Browser renders initial state immediately
 
@@ -201,24 +211,25 @@ You can paint in remote-paint and see updates appear instantly in the browser!
 
 3. **Main** (`main.js`):
    - Application initialization
-   - Event handling (keyboard, mouse)
+   - Event handling (keyboard, mouse) - sends events to server
    - Status updates
    - Terminal focus management
 
-## Current Limitations (Phase 1)
+## Current Status
 
-- **View-only**: Browser can view but not send input yet
-- **DOM rendering only**: Canvas renderer not implemented yet
-- **No authentication**: Open to all connections (development only)
-- **HTTP only**: No TLS/HTTPS support
+**✅ Phase 1 (Complete)**: Matrix ownership, socket server, WebSocket display, periodic snapshots
 
-## Next Steps (Phase 2)
+**✅ Phase 2 (Complete)**: Bi-directional interaction, keyboard and mouse events from browser
 
-- [ ] Send keyboard events from browser to backend
-- [ ] Send mouse events from browser to backend
-- [ ] Bi-directional interaction (browser can control backend)
-- [ ] Connection authentication
-- [ ] HTTPS/WSS support
+## Possible Future Enhancements
+
+- **Performance**: Delta encoding (only send changed cells) instead of full snapshots
+- **Canvas Renderer**: Alternative to DOM for better performance with large matrices
+- **Web Component**: Extract as reusable component
+- **Authentication**: Token-based authentication for connections
+- **HTTPS/WSS**: TLS support for production
+- **Connection Health**: Heartbeat/ping-pong, better reconnection logic
+- **Compression**: gzip or msgpack for protocol messages
 
 ## Architecture Details
 
@@ -240,7 +251,7 @@ The web server uses the exact same JSON protocol as the socket-based communicati
 }
 ```
 
-**Event (Browser → Server → Socket Clients) [Phase 2]:**
+**Event (Browser → Server → Socket Clients):**
 ```json
 {
   "type": "event",
@@ -251,6 +262,20 @@ The web server uses the exact same JSON protocol as the socket-based communicati
     "alt": false,
     "ctrl": false,
     "shift": false
+  }
+}
+```
+
+**Snapshot (Server → Browser, periodic ~20 FPS):**
+```json
+{
+  "type": "response",
+  "id": "snapshot",
+  "payload": {
+    "ok": true,
+    "width": 80,
+    "height": 24,
+    "cells": [[{"char": " ", "fg": "", "bg": "#000000", "style": 0}, ...], ...]
   }
 }
 ```

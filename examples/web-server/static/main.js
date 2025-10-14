@@ -42,6 +42,12 @@ protocol.on('snapshot', (data) => {
     sizeEl.textContent = `${data.width}x${data.height}`;
 });
 
+// Handle delta updates
+protocol.on('delta', (data) => {
+    console.log('Received delta:', data.delta?.length || 0, 'cells');
+    renderer.renderDelta(data.delta);
+});
+
 // Handle resize events
 protocol.on('resize', (data) => {
     console.log('Terminal resized:', data.width, 'x', data.height);
@@ -137,13 +143,27 @@ terminal.addEventListener('mousemove', (e) => {
 // Helper function to get mouse position in matrix coordinates
 function getMousePosition(e) {
     const rect = terminal.getBoundingClientRect();
-    const style = window.getComputedStyle(terminal);
-    const fontSize = parseFloat(style.fontSize);
-    const charWidth = fontSize * 0.6; // Approximate character width
-    const charHeight = fontSize * 1.2; // Line height
 
-    const x = Math.floor((e.clientX - rect.left) / charWidth);
-    const y = Math.floor((e.clientY - rect.top) / charHeight);
+    // Get the first cell to measure actual dimensions
+    const firstRow = terminal.querySelector('.matrix-row');
+    if (!firstRow) return { x: 0, y: 0 };
+
+    const firstCell = firstRow.querySelector('.matrix-cell');
+    if (!firstCell) return { x: 0, y: 0 };
+
+    // Measure actual cell dimensions from rendered DOM
+    const cellRect = firstCell.getBoundingClientRect();
+    const charWidth = cellRect.width;
+    const charHeight = firstRow.getBoundingClientRect().height;
+
+    // Get terminal padding
+    const style = window.getComputedStyle(terminal);
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+
+    // Calculate position accounting for padding
+    const x = Math.floor((e.clientX - rect.left - paddingLeft) / charWidth);
+    const y = Math.floor((e.clientY - rect.top - paddingTop) / charHeight);
 
     return { x, y };
 }

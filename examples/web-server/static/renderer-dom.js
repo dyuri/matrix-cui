@@ -61,6 +61,15 @@ class DOMRenderer {
         }
     }
 
+    renderDelta(deltaUpdates) {
+        if (!deltaUpdates || deltaUpdates.length === 0) return;
+
+        // Apply each cell update
+        for (const update of deltaUpdates) {
+            this.updateCell(update.x, update.y, update.cell);
+        }
+    }
+
     updateCell(x, y, cell) {
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
             return;
@@ -72,8 +81,21 @@ class DOMRenderer {
         const span = row.children[x];
         if (!span) return;
 
+        // Check if cell actually changed to avoid unnecessary DOM updates
+        const oldCell = this.cells[y][x];
+        if (oldCell &&
+            oldCell.char === (cell.char || ' ') &&
+            oldCell.fg === cell.fg &&
+            oldCell.bg === cell.bg &&
+            oldCell.style === cell.style) {
+            return; // No change, skip DOM update
+        }
+
         // Update character
-        span.textContent = cell.char || ' ';
+        const char = cell.char || ' ';
+        if (span.textContent !== char) {
+            span.textContent = char;
+        }
 
         // Build inline style
         let style = '';
@@ -105,7 +127,14 @@ class DOMRenderer {
         // Note: Blink (8) and Reverse (16) are harder to implement in CSS
 
         span.style.cssText = style;
-        this.cells[y][x] = cell;
+
+        // Store cell state for future comparison
+        this.cells[y][x] = {
+            char: char,
+            fg: cell.fg,
+            bg: cell.bg,
+            style: cell.style
+        };
     }
 
     clear() {
