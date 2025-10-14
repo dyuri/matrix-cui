@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix CUI Web Terminal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Matrix CUI Web Terminal</h1>
+            <div class="status-bar">
+                <span class="status-indicator" id="status">Connecting...</span>
+                <span class="terminal-size" id="size">0x0</span>
+            </div>
+        </div>
+        <div id="terminal" class="matrix-terminal" tabindex="0">
+            <!-- Matrix cells will be rendered here -->
+        </div>
+        <div class="footer">
+            <p>Connected to Matrix CUI server. Use keyboard and mouse to interact.</p>
+            <p><small>Press any key or click to focus terminal</small></p>
+        </div>
+    </div>
+
+    <script src="protocol.js"></script>
+    <script src="renderer-dom.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

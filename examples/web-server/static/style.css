@@ -1,0 +1,150 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', Monaco, 'Lucida Console', monospace;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.header {
+    margin-bottom: 20px;
+}
+
+h1 {
+    font-size: 24px;
+    margin-bottom: 10px;
+    color: #00ff00;
+}
+
+.status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #2a2a2a;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+}
+
+.status-indicator::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    background: #ff6b6b;
+}
+
+.status-indicator.connected::before {
+    background: #51cf66;
+}
+
+.status-indicator.connecting::before {
+    background: #ffd93d;
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.terminal-size {
+    color: #888;
+    font-size: 12px;
+}
+
+.matrix-terminal {
+    flex: 1;
+    background: #000;
+    color: #fff;
+    padding: 12px;
+    border: 2px solid #333;
+    border-radius: 4px;
+    font-size: 16px;
+    line-height: 1.2;
+    font-family: 'Courier New', Monaco, 'Lucida Console', monospace;
+    overflow: auto;
+    cursor: text;
+    white-space: pre;
+}
+
+.matrix-terminal:focus {
+    outline: none;
+    border-color: #00ff00;
+}
+
+.matrix-row {
+    white-space: nowrap;
+    height: 1.2em;
+    display: block;
+}
+
+.matrix-cell {
+    display: inline-block;
+    width: 1ch;
+    text-align: center;
+}
+
+.footer {
+    margin-top: 20px;
+    padding: 16px;
+    background: #2a2a2a;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.footer p {
+    margin: 4px 0;
+    font-size: 14px;
+}
+
+.footer small {
+    color: #888;
+    font-size: 12px;
+}
+
+/* Loading state */
+.matrix-terminal.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.matrix-terminal.loading::after {
+    content: 'Loading terminal...';
+    color: #888;
+    font-size: 18px;
+}
+
+/* Error state */
+.error-message {
+    color: #ff6b6b;
+    padding: 12px;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid #ff6b6b;
+    border-radius: 4px;
+    margin: 12px 0;
+}
