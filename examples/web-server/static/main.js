@@ -6,10 +6,23 @@
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
 
+// Parse URL parameters to choose renderer
+const urlParams = new URLSearchParams(window.location.search);
+const rendererType = urlParams.get('renderer') || 'dom'; // Default to DOM
+
 // Initialize protocol and renderer
 const protocol = new MatrixProtocol(wsUrl);
 const terminal = document.getElementById('terminal');
-const renderer = new DOMRenderer(terminal);
+
+// Create the appropriate renderer
+let renderer;
+if (rendererType === 'canvas') {
+    console.log('Using Canvas renderer');
+    renderer = new CanvasRenderer(terminal);
+} else {
+    console.log('Using DOM renderer');
+    renderer = new DOMRenderer(terminal);
+}
 
 // UI elements
 const statusEl = document.getElementById('status');
@@ -142,30 +155,46 @@ terminal.addEventListener('mousemove', (e) => {
 
 // Helper function to get mouse position in matrix coordinates
 function getMousePosition(e) {
-    const rect = terminal.getBoundingClientRect();
+    // Different logic for Canvas vs DOM renderer
+    if (rendererType === 'canvas') {
+        const canvas = terminal.querySelector('canvas');
+        if (!canvas) return { x: 0, y: 0 };
 
-    // Get the first cell to measure actual dimensions
-    const firstRow = terminal.querySelector('.matrix-row');
-    if (!firstRow) return { x: 0, y: 0 };
+        const rect = canvas.getBoundingClientRect();
+        const charWidth = renderer.charWidth;
+        const charHeight = renderer.charHeight;
 
-    const firstCell = firstRow.querySelector('.matrix-cell');
-    if (!firstCell) return { x: 0, y: 0 };
+        const x = Math.floor((e.clientX - rect.left) / charWidth);
+        const y = Math.floor((e.clientY - rect.top) / charHeight);
 
-    // Measure actual cell dimensions from rendered DOM
-    const cellRect = firstCell.getBoundingClientRect();
-    const charWidth = cellRect.width;
-    const charHeight = firstRow.getBoundingClientRect().height;
+        return { x, y };
+    } else {
+        // DOM renderer
+        const rect = terminal.getBoundingClientRect();
 
-    // Get terminal padding
-    const style = window.getComputedStyle(terminal);
-    const paddingLeft = parseFloat(style.paddingLeft) || 0;
-    const paddingTop = parseFloat(style.paddingTop) || 0;
+        // Get the first cell to measure actual dimensions
+        const firstRow = terminal.querySelector('.matrix-row');
+        if (!firstRow) return { x: 0, y: 0 };
 
-    // Calculate position accounting for padding
-    const x = Math.floor((e.clientX - rect.left - paddingLeft) / charWidth);
-    const y = Math.floor((e.clientY - rect.top - paddingTop) / charHeight);
+        const firstCell = firstRow.querySelector('.matrix-cell');
+        if (!firstCell) return { x: 0, y: 0 };
 
-    return { x, y };
+        // Measure actual cell dimensions from rendered DOM
+        const cellRect = firstCell.getBoundingClientRect();
+        const charWidth = cellRect.width;
+        const charHeight = firstRow.getBoundingClientRect().height;
+
+        // Get terminal padding
+        const style = window.getComputedStyle(terminal);
+        const paddingLeft = parseFloat(style.paddingLeft) || 0;
+        const paddingTop = parseFloat(style.paddingTop) || 0;
+
+        // Calculate position accounting for padding
+        const x = Math.floor((e.clientX - rect.left - paddingLeft) / charWidth);
+        const y = Math.floor((e.clientY - rect.top - paddingTop) / charHeight);
+
+        return { x, y };
+    }
 }
 
 // Helper function to map key codes
@@ -217,6 +246,26 @@ terminal.focus();
 
 // Mark terminal as loading
 terminal.classList.add('loading');
+
+// Update footer to show renderer type
+const footerText = document.querySelector('.footer p:first-child');
+if (footerText) {
+    footerText.innerHTML = `Connected to Matrix CUI server. Using <strong>${rendererType.toUpperCase()}</strong> renderer. Use keyboard and mouse to interact.`;
+}
+
+// Add renderer switcher links to footer
+const footerSmall = document.querySelector('.footer small');
+if (footerSmall) {
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.delete('renderer'); // Remove existing renderer param
+    const baseUrl = window.location.pathname + (currentParams.toString() ? '?' + currentParams.toString() : '');
+
+    footerSmall.innerHTML = `
+        Renderer:
+        <a href="${baseUrl}${baseUrl.includes('?') ? '&' : '?'}renderer=dom">DOM</a> |
+        <a href="${baseUrl}${baseUrl.includes('?') ? '&' : '?'}renderer=canvas">Canvas</a>
+    `;
+}
 
 // Connect to server
 protocol.connect().catch((error) => {
